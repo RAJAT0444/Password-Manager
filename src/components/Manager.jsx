@@ -1,34 +1,6 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import zxcvbn from 'zxcvbn';
-import CryptoJS from 'crypto-js';
-
-// Utility functions
-const encryptPassword = (password) => {
-  return CryptoJS.AES.encrypt(password, 'your-secret-key').toString();
-};
-
-const decryptPassword = (encryptedPassword) => {
-  const bytes = CryptoJS.AES.decrypt(encryptedPassword, 'your-secret-key');
-  return bytes.toString(CryptoJS.enc.Utf8);
-};
-
-const generatePassword = (length = 12) => {
-  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+[]{}|;:,.<>?";
-  let password = '';
-  for (let i = 0; i < length; i++) {
-    const randomIndex = Math.floor(Math.random() * charset.length);
-    password += charset[randomIndex];
-  }
-  return password;
-};
-
-const getPasswordStrength = (password) => {
-  const result = zxcvbn(password);
-  return result.score; // Returns a score from 0 to 4
-};
 
 const Manager = () => {
   const ref = useRef();
@@ -39,59 +11,37 @@ const Manager = () => {
   const [newPassword, setNewPassword] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newSite, setNewSite] = useState('');
-  const [generatedPassword, setGeneratedPassword] = useState('');
-  const [passwordStrength, setPasswordStrength] = useState(0);
+  const [clipboardMessage, setClipboardMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ username: '', password: '' });
-  const [isRegistering, setIsRegistering] = useState(false); // State to toggle between login and register forms
+  const [loggedInUser, setLoggedInUser] = useState(null);
+  const [registeredUsers, setRegisteredUsers] = useState([]);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('loggedInUser');
-    if (savedUser) {
-      setIsLoggedIn(true);
-      const savedPasswords = localStorage.getItem('passwords');
-      if (savedPasswords) {
-        setPasswordArray(JSON.parse(savedPasswords).map(p => ({ ...p, password: decryptPassword(p.password) })));
-      }
+    const savedPasswords = localStorage.getItem('passwords');
+    const savedUsers = localStorage.getItem('registeredUsers');
+
+    if (savedPasswords) {
+      setPasswordArray(JSON.parse(savedPasswords));
     }
+
+    if (savedUsers) {
+      setRegisteredUsers(JSON.parse(savedUsers));
+    }
+
     setTimeout(() => {
       setLoading(false);
     }, 3000);
   }, []);
 
-  const handleLogin = () => {
-    const storedPassword = localStorage.getItem(`user_${loginForm.username}`);
-    if (storedPassword && decryptPassword(storedPassword) === loginForm.password) {
-      localStorage.setItem('loggedInUser', loginForm.username);
-      setIsLoggedIn(true);
-      toast.success('Logged in successfully!');
-    } else {
-      toast.error('Invalid username or password!');
-    }
-  };
-
-  const handleRegister = () => {
-    if (localStorage.getItem(`user_${registerForm.username}`)) {
-      toast.error('Username already exists!');
-      return;
-    }
-    const encryptedPassword = encryptPassword(registerForm.password);
-    localStorage.setItem(`user_${registerForm.username}`, encryptedPassword);
-    toast.success('Registered successfully! You can now log in.');
-    setIsRegistering(false); // Switch back to login form after registration
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('loggedInUser');
-    setIsLoggedIn(false);
-    toast.success('Logged out successfully!');
-  };
-
   const showPassword = () => {
-    passwordRef.current.type = passwordRef.current.type === 'password' ? 'text' : 'password';
-    ref.current.src = passwordRef.current.type === 'password' ? 'icons/view.jpeg' : 'icons/cross.jpeg';
+    passwordRef.current.type = 'text';
+    if (ref.current.src.includes('icons/cross.jpeg')) {
+      passwordRef.current.type = 'password';
+      ref.current.src = 'icons/view.jpeg';
+    } else {
+      ref.current.src = 'icons/cross.jpeg';
+      passwordRef.current.type = 'text';
+    }
   };
 
   const savePassword = () => {
@@ -100,8 +50,7 @@ const Manager = () => {
       return;
     }
 
-    const encryptedPassword = encryptPassword(form.password);
-    const newPasswordArray = [...passwordArray, { ...form, password: encryptedPassword }];
+    const newPasswordArray = [...passwordArray, form];
     setPasswordArray(newPasswordArray);
     localStorage.setItem('passwords', JSON.stringify(newPasswordArray));
     setForm({ site: '', username: '', password: '' });
@@ -110,22 +59,11 @@ const Manager = () => {
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
-    if (e.target.name === 'password') {
-      setPasswordStrength(getPasswordStrength(e.target.value));
-    }
   };
 
-  const handleLoginChange = (e) => {
-    setLoginForm({ ...loginForm, [e.target.name]: e.target.value });
-  };
-
-  const handleRegisterChange = (e) => {
-    setRegisterForm({ ...registerForm, [e.target.name]: e.target.value });
-  };
-
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (text, clipword) => {
     navigator.clipboard.writeText(text).then(() => {
-      toast.success('Copied to clipboard!', {
+      toast.success(`Copied ${clipword} to clipboard!`, {
         position: 'top-right',
         autoClose: 3000,
         hideProgressBar: false,
@@ -142,14 +80,14 @@ const Manager = () => {
     setEditingIndex(index);
     setNewSite(passwordArray[index].site);
     setNewUsername(passwordArray[index].username);
-    setNewPassword(decryptPassword(passwordArray[index].password));
+    setNewPassword(passwordArray[index].password);
   };
 
   const saveEditedPassword = (index) => {
     const updatedPasswords = [...passwordArray];
     updatedPasswords[index].site = newSite;
     updatedPasswords[index].username = newUsername;
-    updatedPasswords[index].password = encryptPassword(newPassword);
+    updatedPasswords[index].password = newPassword;
     setPasswordArray(updatedPasswords);
     localStorage.setItem('passwords', JSON.stringify(updatedPasswords));
     setEditingIndex(null);
@@ -166,278 +104,363 @@ const Manager = () => {
     }
   };
 
-  const handleGeneratePassword = () => {
-    const newPassword = generatePassword();
-    setGeneratedPassword(newPassword);
-    setForm({ ...form, password: newPassword });
-    setPasswordStrength(getPasswordStrength(newPassword));
+  const handleLogin = () => {
+    const user = registeredUsers.find(
+      (user) => user.username === form.username && user.password === form.password
+    );
+
+    if (user) {
+      setLoggedInUser(user);
+      toast.success('Logged in successfully!');
+    } else {
+      toast.error('Invalid username or password. Please try again.');
+    }
+  };
+
+  const handleLogout = () => {
+    setLoggedInUser(null);
+    toast.success('Logged out successfully!');
+  };
+
+  const handleRegister = () => {
+    if (!form.username || !form.password) {
+      toast.error('Please enter both username and password to register.');
+      return;
+    }
+
+    const existingUser = registeredUsers.find((user) => user.username === form.username);
+    if (existingUser) {
+      toast.error('Username already exists. Please choose a different username.');
+      return;
+    }
+
+    const newUser = { username: form.username, password: form.password };
+    setRegisteredUsers([...registeredUsers, newUser]);
+    localStorage.setItem('registeredUsers', JSON.stringify([...registeredUsers, newUser]));
+    toast.success('Registered successfully!');
+    setForm({ site: '', username: '', password: '' });
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center w-full h-[100vh] text-gray-900 dark:text-gray-100 dark:bg-gray-950">
-        <div>
-          <h1 className="text-xl md:text-7xl font-bold flex items-center">
-            L
-            <svg
-              stroke="currentColor"
-              fill="currentColor"
-              strokeWidth="0"
-              viewBox="0 0 24 24"
-              className="animate-spin"
-              height="1em"
-              width="1em"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path d="M12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2ZM13.6695 15.9999H10.3295L8.95053 17.8969L9.5044 19.6031C10.2897 19.8607 11.1286 20 12 20C12.8714 20 13.7103 19.8607 14.4956 19.6031L15.0485 17.8969L13.6695 15.9999ZM5.29354 10.8719L4.00222 11.8095L4 12C4 13.7297 4.54894 15.3312 5.4821 16.6397L7.39254 16.6399L8.71453 14.8199L7.68654 11.6499L5.29354 10.8719ZM18.7055 10.8719L16.3125 11.6499L15.2845 14.8199L16.6065 16.6399L18.5179 16.6397C19.4511 15.3312 20 13.7297 20 12C20 11.8095 19.9978 11.8095 19.7065 10.8719L18.7055 10.8719Z"></path>
-            </svg>
-            ading...
-          </h1>
+      <div className='flex items-center justify-center h-screen'>
+        <div aria-label='Loading...' role='status' className='flex items-center space-x-2'>
+          <svg className='h-20 w-20 animate-spin stroke-gray-500' viewBox='0 0 256 256'>
+            <line
+              x1='128'
+              y1='32'
+              x2='128'
+              y2='64'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+            <line
+              x1='195.9'
+              y1='60.1'
+              x2='173.3'
+              y2='82.7'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+            <line
+              x1='224'
+              y1='128'
+              x2='192'
+              y2='128'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+            <line
+              x1='195.9'
+              y1='195.9'
+              x2='173.3'
+              y2='173.3'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+            <line
+              x1='128'
+              y1='224'
+              x2='128'
+              y2='192'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+            <line
+              x1='60.1'
+              y1='195.9'
+              x2='82.7'
+              y2='173.3'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+            <line
+              x1='32'
+              y1='128'
+              x2='64'
+              y2='128'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+            <line
+              x1='60.1'
+              y1='60.1'
+              x2='82.7'
+              y2='82.7'
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              stroke-width='24'
+            ></line>
+          </svg>
+          <span className='text-4xl font-medium text-gray-500'>Loading...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-full p-4 bg-gray-100 dark:bg-gray-900">
-      <ToastContainer />
-      {!isLoggedIn ? (
-        <div className="max-w-md mx-auto p-4 border rounded-lg shadow-md bg-white dark:bg-gray-800 dark:border-gray-700">
-          {!isRegistering ? (
-            <div>
-              <h2 className="text-2xl font-bold mb-4">Login</h2>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleLogin();
-                }}
-              >
-                <input
-                  type="text"
-                  name="username"
-                  value={loginForm.username}
-                  onChange={handleLoginChange}
-                  placeholder="Username"
-                  className="w-full p-2 mb-4 border rounded-lg"
-                  required
-                />
-                <input
-                  type="password"
-                  name="password"
-                  value={loginForm.password}
-                  onChange={handleLoginChange}
-                  placeholder="Password"
-                  className="w-full p-2 mb-4 border rounded-lg"
-                  required
-                />
-                <button
-                  type="submit"
-                  className="w-full p-2 bg-blue-500 text-white rounded-lg"
-                >
-                  Login
-                </button>
-              </form>
-              <div className="mt-4 text-center">
-                <button
-                  onClick={() => setIsRegistering(true)}
-                  className="text-blue-500"
-                >
-                  Don't have an account? Register
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <h2 className="text-2xl font-bold mb-4">Register</h2>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleRegister();
-                }}
-              >
-                <input
-                  type="text"
-                  name="username"
-                  value={registerForm.username}
-                  onChange={handleRegisterChange}
-                  placeholder="Username"
-                  className="w-full p-2 mb-4 border rounded-lg"
-                  required
-                />
-                <input
-                  type="password"
-                  name="password"
-                  value={registerForm.password}
-                  onChange={handleRegisterChange}
-                  placeholder="Password"
-                  className="w-full p-2 mb-4 border rounded-lg"
-                  required
-                />
-                <button
-                  type="submit"
-                  className="w-full p-2 bg-green-500 text-white rounded-lg"
-                >
-                  Register
-                </button>
-              </form>
-              <div className="mt-4 text-center">
-                <button
-                  onClick={() => setIsRegistering(false)}
-                  className="text-blue-500"
-                >
-                  Already have an account? Login
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="max-w-4xl mx-auto p-4 border rounded-lg shadow-md bg-white dark:bg-gray-800 dark:border-gray-700">
-          <button
-            onClick={handleLogout}
-            className="mb-4 p-2 bg-red-500 text-white rounded-lg"
-          >
-            Logout
-          </button>
-          <h2 className="text-2xl font-bold mb-4">Password Manager</h2>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              savePassword();
-            }}
-            className="mb-4"
-          >
-            <input
-              type="text"
-              name="site"
-              value={form.site}
-              onChange={handleChange}
-              placeholder="Site"
-              className="w-full p-2 mb-2 border rounded-lg"
-              required
-            />
-            <input
-              type="text"
-              name="username"
-              value={form.username}
-              onChange={handleChange}
-              placeholder="Username"
-              className="w-full p-2 mb-2 border rounded-lg"
-              required
-            />
-            <input
-              type="password"
-              name="password"
-              value={form.password}
-              onChange={handleChange}
-              placeholder="Password"
-              className="w-full p-2 mb-2 border rounded-lg"
-              ref={passwordRef}
-              required
-            />
-            <button
-              type="button"
-              onClick={showPassword}
-              className="mb-2 text-blue-500"
-            >
-              Show/Hide Password
-            </button>
-            <button
-              type="button"
-              onClick={handleGeneratePassword}
-              className="mb-2 p-2 bg-yellow-500 text-white rounded-lg"
-            >
-              Generate Password
-            </button>
-            {generatedPassword && (
-              <div className="mb-2 p-2 bg-gray-200 rounded-lg">
-                <span>Generated Password: {generatedPassword}</span>
-              </div>
-            )}
-            <button
-              type="submit"
-              className="w-full p-2 bg-blue-500 text-white rounded-lg"
-            >
-              Save Password
-            </button>
-          </form>
+    <>
+      <ToastContainer
+        position='top-right'
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme='dark'
+      />
 
-          <h3 className="text-xl font-bold mb-2">Stored Passwords</h3>
-          {passwordArray.length === 0 ? (
-            <p>No passwords stored.</p>
-          ) : (
-            <ul>
-              {passwordArray.map((p, index) => (
-                <li key={index} className="mb-2 p-2 border-b">
-                  {editingIndex === index ? (
-                    <div>
-                      <input
-                        type="text"
-                        value={newSite}
-                        onChange={(e) => setNewSite(e.target.value)}
-                        placeholder="Site"
-                        className="w-full p-2 mb-2 border rounded-lg"
-                      />
-                      <input
-                        type="text"
-                        value={newUsername}
-                        onChange={(e) => setNewUsername(e.target.value)}
-                        placeholder="Username"
-                        className="w-full p-2 mb-2 border rounded-lg"
-                      />
-                      <input
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="Password"
-                        className="w-full p-2 mb-2 border rounded-lg"
-                      />
-                      <button
-                        onClick={() => saveEditedPassword(index)}
-                        className="mr-2 p-2 bg-green-500 text-white rounded-lg"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingIndex(null)}
-                        className="p-2 bg-gray-500 text-white rounded-lg"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <p><strong>Site:</strong> {p.site}</p>
-                      <p><strong>Username:</strong> {p.username}</p>
-                      <p><strong>Password:</strong> {p.password}</p>
-                      <button
-                        onClick={() => startEditing(index)}
-                        className="mr-2 p-2 bg-yellow-500 text-white rounded-lg"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => deletePassword(index)}
-                        className="p-2 bg-red-500 text-white rounded-lg"
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() => copyToClipboard(p.password)}
-                        className="ml-2 p-2 bg-blue-500 text-white rounded-lg"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
-              
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
+      <div className='absolute inset-0 z-[-10] h-full w-full bg-white bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:14px_24px]'>
+        <div className='absolute left-0 right-0 top-0 z-[-10] m-auto h-[310px] w-[310px] rounded-full bg-green-400 opacity-20 blur-[100px]'></div>
+      </div>
+
+      <div className='mycontainer'>
+        <h1 className='text-4xl font-bold text-center'>
+          <span className='text-green-700'>&lt;</span>
+          <span>Dozz</span>
+          <span className='text-green-700'>Password/ &gt;</span>
+        </h1>
+        <p className='text-green-900 text-lg text-center'>Your own Password Manager</p>
+
+        {!loggedInUser ? (
+          <div className='flex flex-col p-4 text-black gap-8 items-center'>
+            <input
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              placeholder='Enter Username'
+              className='rounded-full border border-green-600 w-full p-4 py-1'
+              type='text'
+              name='username'
+            />
+            <input
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder='Enter Password'
+              className='rounded-full border border-green-600 w-full p-4 py-1'
+              type='password'
+              name='password'
+            />
+            <div className='flex w-full justify-between gap-8'>
+              <button
+                onClick={handleLogin}
+                className='flex justify-between items-center gap-2 bg-green-400 rounded-full hover:bg-green-300 px-8 py-2 w-fit border-2 border-green-900'
+              >
+                <lord-icon
+                  src='https://cdn.lordicon.com/jgnvfzqg.json'
+                  trigger='hover'
+                ></lord-icon>
+                Login
+              </button>
+              <button
+                onClick={handleRegister}
+                className='flex justify-between items-center gap-2 bg-green-400 rounded-full hover:bg-green-300 px-8 py-2 w-fit border-2 border-green-900'
+              >
+                <lord-icon
+                  src='https://cdn.lordicon.com/jgnvfzqg.json'
+                  trigger='hover'
+                ></lord-icon>
+                Register
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className='flex justify-end'>
+              <button
+                onClick={handleLogout}
+                className='bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600'
+              >
+                Logout
+              </button>
+            </div>
+
+            <div className='flex flex-col p-4 text-black gap-8 items-center'>
+              <input
+                value={form.site}
+                onChange={(e) => setForm({ ...form, site: e.target.value })}
+                placeholder='Enter website URL'
+                className='rounded-full border border-green-600 w-full p-4 py-1'
+                type='text'
+                name='site'
+              />
+              <div className='flex w-full justify-between gap-8'>
+                <input
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  placeholder='Enter Username'
+                  className='rounded-full border border-green-600 w-full p-4 py-1'
+                  type='text'
+                  name='username'
+                />
+                <div className='relative'>
+                  <input
+                    ref={passwordRef}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder='Enter Password'
+                    className='rounded-full border border-green-600 w-full p-4 py-1'
+                    type='password'
+                    name='password'
+                  />
+                  <span className='absolute right-[3px] top-[4px] cursor-pointer' onClick={showPassword}>
+                    <img ref={ref} className='p-1' width={26} src='icons/view.jpeg' alt='eye' />
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={savePassword}
+                className='flex justify-between items-center gap-2 bg-green-400 rounded-full hover:bg-green-300 px-8 py-2 w-fit border-2 border-green-900'
+              >
+                <lord-icon
+                  src='https://cdn.lordicon.com/jgnvfzqg.json'
+                  trigger='hover'
+                ></lord-icon>
+                Save
+              </button>
+            </div>
+
+            <div className='passwords'>
+              <h2 className='font-bold text-2xl py-4'>Your Passwords</h2>
+              {passwordArray.length === 0 && <div>No Passwords To Show</div>}
+              {passwordArray.length !== 0 && (
+                <table className='table-auto w-full rounded-md overflow-hidden'>
+                  <thead className='bg-green-800 text-white'>
+                    <tr>
+                      <th className='py-2'>Website URL</th>
+                      <th className='py-2'>Username</th>
+                      <th className='py-2'>Password</th>
+                      <th className='py-2'>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {passwordArray.map((password, index) => (
+                      <tr key={index} className='bg-white border border-white'>
+                        <td className='py-2 border border-white text-center w-48'>
+                          {editingIndex === index ? (
+                            <input
+                              value={newSite}
+                              onChange={(e) => setNewSite(e.target.value)}
+                              className='rounded-full border border-green-600 w-full p-2'
+                              type='text'
+                            />
+                          ) : (
+                            password.site
+                          )}
+                          <img
+                            src='https://cdn-icons-png.flaticon.com/128/3214/3214746.png'
+                            alt='copy icon'
+                            width={16}
+                            className='inline-block ml-2 cursor-pointer'
+                            onClick={() => copyToClipboard(password.site, 'Website URL')}
+                          />
+                        </td>
+                        <td className='py-2 border border-white text-center w-32'>
+                          {editingIndex === index ? (
+                            <input
+                              value={newUsername}
+                              onChange={(e) => setNewUsername(e.target.value)}
+                              className='rounded-full border border-green-600 w-full p-2'
+                              type='text'
+                            />
+                          ) : (
+                            password.username
+                          )}
+                          <img
+                            src='https://cdn-icons-png.flaticon.com/128/3214/3214746.png'
+                            alt='copy icon'
+                            width={16}
+                            className='inline-block ml-2 cursor-pointer'
+                            onClick={() => copyToClipboard(password.username, 'Username')}
+                          />
+                        </td>
+                        <td className='py-2 border border-white text-center w-32'>
+                          {editingIndex === index ? (
+                            <input
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              className='rounded-full border border-green-600 w-full p-2'
+                              type='password'
+                            />
+                          ) : (
+                            password.password
+                          )}
+                          <img
+                            src='https://cdn-icons-png.flaticon.com/128/3214/3214746.png'
+                            alt='copy icon'
+                            width={16}
+                            className='inline-block ml-2 cursor-pointer'
+                            onClick={() => copyToClipboard(password.password, 'Password')}
+                          />
+                        </td>
+                        <td className='py-2 border border-white text-center w-16'>
+                          {editingIndex === index ? (
+                            <button
+                              onClick={() => saveEditedPassword(index)}
+                              className='bg-green-400 p-1 rounded-full hover:bg-green-300'
+                            >
+                              Save
+                            </button>
+                          ) : (
+                            <>
+                              <img
+                                src='https://cdn-icons-png.flaticon.com/128/13170/13170070.png'
+                                alt='edit icon'
+                                width={16}
+                                className='inline-block mx-2 cursor-pointer'
+                                onClick={() => startEditing(index)}
+                              />
+                              <img
+                                src='https://cdn-icons-png.flaticon.com/128/6861/6861362.png'
+                                alt='delete icon'
+                                width={16}
+                                className='inline-block mx-2 cursor-pointer'
+                                onClick={() => {
+                                  deletePassword(index);
+                                }}
+                              />
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 };
 
